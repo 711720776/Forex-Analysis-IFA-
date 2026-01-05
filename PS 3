@@ -1,0 +1,113 @@
+import pandas as pd
+
+file_path = r"C:\Users\olich\OneDrive\Desktop\Winter 25-26\Problem set 3 FX data.xlsx"
+
+import numpy as np
+import statsmodels.api as sm
+import matplotlib.pyplot as plt
+
+raw = pd.read_excel(file_path, sheet_name = "Data")
+
+curr = ["Euro", "Australia", "Canada", "Japan", "New Zealand", "Norway", "Sweden", "Switzerland", "UK"]
+
+df = raw.iloc[1:].copy()
+
+df.columns = ["Date"] + [f"S_{c}" for c in curr] + ["sep"] + [f"F_{c}" for c in curr]
+
+df = df.drop(columns = ["sep"])
+
+
+df["Date"] = pd.to_datetime(df["Date"])
+df = df.sort_values("Date").reset_index(drop=True)
+
+for c in curr:
+    df[f"S_{c}"] = pd.to_numeric(df[f"S_{c}"], errors= "coerce")
+    df[f"F_{c}"] = pd.to_numeric(df[f"F_{c}"], errors = "coerce")
+
+
+df.head()
+
+s = pd.DataFrame({c: np.log(df[f"S_{c}"]) for c in curr}, index = df["Date"])
+f = pd.DataFrame({c: np.log(df[f"F_{c}"]) for c in curr}, index = df["Date"])
+
+
+df = df.set_index("Date")
+
+s = np.log(df[[f"S_{c}" for c in curr]])
+f = np.log(df[[f"F_{c}" for c in curr]])
+
+s.columns = curr
+f.columns = curr
+
+
+#problem 3.1 a)
+# Change in exchange rates for one month
+dS = s.shift(-1) - s
+
+
+#Change in currency excess returns
+rx = f - s.shift(-1)
+
+
+#Forward Premium
+fp = f - s
+
+dS.head()
+
+rx.tail()
+
+print(dS.head(3))
+print(fp.head(3))
+print(rx.head(3))
+
+
+mean_dS_annual = 12 * dS.mean()
+mean_rx_annual = 12 * rx.mean()
+
+
+summary_31b = pd.DataFrame({
+    "Mean dS (annualized)": mean_dS_annual,
+    "Mean rx (annualized)": mean_rx_annual,
+})
+summary_31b
+
+corr_31b = mean_dS_annual.corr(mean_rx_annual)
+corr_31b
+
+
+mu_rx = rx.mean()
+sd_rx = rx.std()
+sharpe_ann = (mu_rx / sd_rx) * np.sqrt(12)
+sharpe_ann
+
+
+mu_fp = fp.mean()
+fp_ann = mu_fp * 12
+fp_ann
+
+
+corr_31c = sharpe_ann.corr(fp_ann)
+corr_31c
+
+#Problem 3.2
+#a
+s = df[[f"S_{c}" for c in curr]].copy()
+f = df[[f"F_{c}" for c in curr]].copy()
+
+s.columns = curr
+f.columns = curr
+
+spot_rate = s.shift(-1) / s - 1
+spot_rate = spot_rate.iloc[:-1]
+
+excess_return = f / s.shift(-1) - 1
+excess_return = excess_return.iloc[:-1]
+
+int_diff = f / s - 1
+int_diff = int_diff.iloc[:-1]
+
+spot_rate.head()
+
+excess_return.head()
+
+int_diff.head()
