@@ -111,3 +111,66 @@ spot_rate.head()
 excess_return.head()
 
 int_diff.head()
+
+
+Problem 3.2 (b)    
+k = 2
+hml_returns = []
+
+for t in excess_return.index:
+    sig_t = int_diff.loc[t]
+    rx_t = excess_return.loc[t]
+    sig_sorted = sig_t.sort_values()
+    low = sig_sorted.index[:k]
+    high = sig_sorted.index[-k:]
+    hml = rx_t[high].mean() - rx_t[low].mean()
+    hml_returns.append(hml)
+
+hml = pd.Series(hml_returns, index = excess_return.index, name = "hml carry")
+
+hml.head()
+hml.mean()
+
+
+rank_returns = []
+
+for t in excess_return.index:
+    sig_t = int_diff.loc[t].dropna()
+    rx_t = excess_return.loc[t][sig_t.index]
+    N = len(sig_t)
+    r = sig_t.rank(method = "first")
+    w = r - (N + 1) / 2
+    w = w / np.sum(np.abs(w))
+    rank_returns.append(np.sum(w * rx_t))
+
+rank_port = pd.Series(rank_returns, index = excess_return.index, name = "Rank_carry")
+
+rank_port.head()
+
+rank_port.mean()
+
+linear_returns = []
+
+for t in excess_return.index:
+    sig_t = int_diff.loc[t].dropna()
+    rx_t = excess_return.loc[t][sig_t.index]
+    x = sig_t - sig_t.mean()
+    w = x / np.sum(np.abs(x))
+    linear_returns.append(np.sum(w * rx_t))
+
+linear_port = pd.Series(linear_returns, index = excess_return.index, name = "Linear Carry")
+linear_port.head()
+
+time_returns = []
+
+for t in excess_return.index:
+    sig_t = int_diff.loc[t].dropna()
+    rx_t = excess_return.loc[t][sig_t.index]
+    w = sig_t / np.sum(np.abs(sig_t))
+    time_returns.append(np.sum( w * rx_t))
+
+time_port = pd.Series(time_returns, index = excess_return.index, name = "Timing Carry")
+
+time_port.head()
+
+time_port.mean()
