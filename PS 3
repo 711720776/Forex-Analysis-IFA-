@@ -174,3 +174,101 @@ time_port = pd.Series(time_returns, index = excess_return.index, name = "Timing 
 time_port.head()
 
 time_port.mean()
+
+
+#Problem 3.2 C#
+portfolios = pd.DataFrame({
+    "HML" : hml,
+    "Rank": rank_port,
+    "Linear": linear_port,
+    "Timing": time_port
+})
+
+portfolios.head()
+
+mean_ann = 12 * portfolios.mean()
+mean_ann
+
+vol_ann = np.sqrt(12) * portfolios.std()
+vol_ann
+
+sharpe_ann = mean_ann / vol_ann
+sharpe_ann
+
+summary_32c = pd.DataFrame({
+    "Annualized Mean": mean_ann,
+    "Annualized Volatility": vol_ann,
+    "Annualized Sharpe": sharpe_ann
+})
+summary_32c
+
+cum_returns = (1 + portfolios).cumprod()
+cum_returns.head()
+
+cum_returns.plot(
+    title="Carry Trade Strategies: Cumulative Performance",
+    ylabel="Wealth Index",
+    xlabel = "Date",
+    figsize=(10,6)
+)
+
+running_max = cum_returns.cummax()
+drawdowns = cum_returns / running_max - 1
+drawdowns.head()
+
+drawdowns.plot(
+    title = "Carry Trade Strategies: Drawdowns",
+    ylabel= "Drawdown",
+    xlabel= "Date",
+    figsize=(10,6)
+)
+
+
+alphas = []
+betas = []
+
+for t in excess_return.index:
+    y = excess_return.loc[t]
+    x = int_diff.loc[t]
+    tmp = pd.concat([y,x], axis = 1).dropna()
+    tmp.columns = ["y", "x"]
+    x = sm.add_constant(tmp["x"])
+    res = sm.OLS(tmp["y"],x).fit()
+    alphas.append(res.params["const"])
+    betas.append(res.params["x"])
+
+alpha_t = pd.Series(alphas, index = excess_return.index, name = "alpha_t")
+beta_t = pd.Series(betas, index = excess_return.index, name = "beta_t")
+
+beta_mean = beta_t.mean()
+beta_std = beta_t.std()
+beta_tstat = beta_mean / (beta_std / np.sqrt(len(beta_t)))
+beta_mean, beta_tstat
+
+ts_results = {}
+
+for c in excess_return.columns:
+    # dependent variable: excess return of currency c over time
+    y = excess_return[c]
+
+    # independent variable: interest differential of currency c
+    x = int_diff[c]
+
+    # align and drop missing values
+    tmp = pd.concat([y, x], axis=1).dropna()
+    tmp.columns = ["y", "x"]
+
+    # add constant
+    X = sm.add_constant(tmp["x"])
+
+    # OLS regression
+    res = sm.OLS(tmp["y"], X).fit()
+
+    ts_results[c] = {
+        "alpha": res.params["const"],
+        "beta": res.params["x"],
+        "t_beta": res.tvalues["x"],
+        "R2": res.rsquared
+    }
+ts_table = pd.DataFrame(ts_results).T
+ts_table
