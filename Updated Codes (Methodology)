@@ -1,0 +1,1552 @@
+import pandas as pd
+#Reading file path#
+file_path = r"C:\Users\olich\OneDrive\Desktop\Master Thesis\Master Final Data.xlsx"
+
+xls = pd.ExcelFile(file_path)
+xls.sheet_names
+
+spxt = pd.read_excel(file_path, sheet_name = "SPXT Index")
+spxt.head()
+
+#Clean the data with date set as date
+spxt_clean = spxt[["Dates", "PX_LAST"]].copy()
+spxt_clean["Dates"] = pd.to_datetime(spxt_clean["Dates"])
+spxt_clean = spxt_clean.set_index("Dates")
+spxt_clean = spxt_clean.sort_index()
+spxt_clean.head()
+
+#Check the timeperiod and fix it from Sept. 1989 - Sept. 2025, 36 years of data
+spxt_clean.index.min(),spxt_clean.index.max(),spxt_clean.index.to_series().diff().value_counts().head()
+
+spxt_clean = spxt_clean.loc["1989-09-01":"2025-09-30"]
+spxt_clean.index.min(), spxt_clean.index.max()
+
+#Calculate simple monthly return for SPXT
+spxt_ret = spxt_clean["PX_LAST"].pct_change().dropna()
+spxt_ret.head(), spxt_ret.tail()
+
+#Rename the SPXT series
+spxt_ret.name = "SPXT"
+
+#Repeat the same for Bond LUACTRUU
+lu = pd.read_excel(file_path, sheet_name = "LUACTRUU Index")
+lu.head()
+
+lu_clean = lu[["Dates", "PX_LAST"]].copy()
+lu_clean["Dates"] = pd.to_datetime(lu_clean["Dates"])
+lu_clean = lu_clean.set_index("Dates")
+lu_clean = lu_clean.sort_index()
+lu_clean.head()
+
+lu_clean = lu_clean.loc["1989-09-01":"2025-09-30"]
+lu_clean.index.min(), lu_clean.index.max()
+
+lu_ret = lu_clean["PX_LAST"].pct_change().dropna()
+lu_ret.name = "LUACTRUU"
+
+lu_ret.head()
+
+lu_ret.tail()
+
+#Repeat the same for Bond FDTR
+fdtr = pd.read_excel(file_path, sheet_name = "FDTR Index")
+fdtr.head()
+
+fdtr_clean = fdtr[["Dates", "PX_LAST"]].copy()
+fdtr_clean["Dates"] = pd.to_datetime(fdtr_clean["Dates"])
+fdtr_clean = fdtr_clean.set_index("Dates").sort_index()
+
+fdtr_clean = fdtr_clean.loc["1989-09-01":"2025-09-30"].dropna()
+
+fdtr_clean.index.min(), fdtr_clean.index.max(), fdtr_clean.head()
+#Convert annualiazed rate into Monthly compounded returns#
+fdtr_ret = (1 + fdtr_clean["PX_LAST"] / 100) ** (1/12) - 1
+fdtr_ret.name = "RF"
+fdtr_ret.head(), fdtr_ret.tail()
+
+#Repeat the same for FNER
+fner = pd.read_excel(file_path, sheet_name="FNER Index")
+fner.head()
+
+fner_clean = fner[["Dates", "PX_LAST"]].copy()
+fner_clean["Dates"] = pd.to_datetime(fner_clean["Dates"])
+fner_clean = fner_clean.set_index("Dates").sort_index()
+
+fner_clean.head()
+
+fner_clean = fner_clean.loc["1989-09-01":"2025-09-30"]
+
+fner_clean.index.min(), fner_clean.index.max()
+
+fner_ret = fner_clean["PX_LAST"].pct_change().dropna()
+
+fner_ret.name = "FNER"
+
+fner_ret.head(), fner_ret.tail()
+
+#Repeat the same for SPGCCITR
+spgccitr = pd.read_excel(file_path, sheet_name="SPGCCITR Index")
+spgccitr.head()
+
+spgccitr_clean = spgccitr[["Dates", "PX_LAST"]].copy()
+
+spgccitr_clean["Dates"] = pd.to_datetime(spgccitr_clean["Dates"])
+spgccitr_clean = spgccitr_clean.set_index("Dates").sort_index()
+
+spgccitr_clean.head()
+
+spgccitr_clean = spgccitr_clean.loc["1989-09-01":"2025-09-30"]
+
+spgccitr_clean.index.min(), spgccitr_clean.index.max()
+
+spgccitr_ret = spgccitr_clean["PX_LAST"].pct_change().dropna()
+
+spgccitr_ret.name = "SPGCCITR"
+
+spgccitr_ret.head(), spgccitr_ret.tail()
+
+#Combine all return series into a dataframe
+returns_core = pd.concat(
+    [spxt_ret, lu_ret, fdtr_ret, fner_ret, spgccitr_ret],
+    axis=1
+)
+
+#Drop the first missing values
+returns_core = returns_core.dropna()
+
+returns_core.head(), returns_core.tail()
+returns_core.head(), returns_core.tail()
+
+#Calculate monthly statistics
+summary_stats = pd.DataFrame({
+    "Mean": returns_core.mean(),
+    "Std": returns_core.std(),
+    "Sharpe": returns_core.mean() / returns_core.std()
+})
+
+#Calculate annual statistics
+summary_stats_ann = pd.DataFrame({
+    "Mean (ann)": returns_core.mean() * 12,
+    "Std (ann)": returns_core.std() * (12 ** 0.5),
+    "Sharpe": (returns_core.mean() / returns_core.std()) * (12 ** 0.5)
+})
+
+summary_stats_ann
+summary_stats
+
+#Calculate correlations of asset classes
+corr_matrix = returns_core.corr()
+corr_matrix
+
+# Compute Mean returns vector and covariance
+import numpy as np
+mu = returns_core.mean().values
+Sigma = returns_core.cov().values
+
+#Invert covariance matrix and create vectors of 1
+Sigma_inv = np.linalg.inv(Sigma)
+ones = np.ones(len(mu))
+w_gmv = Sigma_inv @ ones / (ones @ Sigma_inv @ ones)
+
+#Compute Global Minimum Variance Portfolio Weights
+gmv_weights = pd.Series(w_gmv, index = returns_core.columns)
+gmv_weights
+
+from scipy.optimize import minimize
+import numpy as np
+
+#Calculating returns with and without commodities
+returns_jensen_base = returns_core[["SPXT", "LUACTRUU", "FNER", "RF"]]          
+returns_jensen_with = returns_core[["SPXT", "LUACTRUU", "FNER", "RF", "SPGCCITR"]] 
+
+returns_jensen_base.columns, returns_jensen_with.columns
+
+#Define Efficient Frontier with 30 points
+def compute_frontier_no_short(returns_df, n_points=30):
+    mu = returns_df.mean().values
+    Sigma = returns_df.cov().values
+    n = len(mu)
+
+#Initial guess and constraint no short selling
+    w0 = np.ones(n) / n
+    bounds = tuple((0, 1) for _ in range(n))
+
+#define portfolio variance and create target returns
+    def var_obj(w):
+        return w.T @ Sigma @ w
+
+    target_grid = np.linspace(mu.min(), mu.max(), n_points)
+
+    vol = []
+    ret = []
+
+#Include constraints in the loop
+    for target in target_grid:
+        cons = (
+            {"type": "eq", "fun": lambda w: np.sum(w) - 1},
+            {"type": "eq", "fun": lambda w, target=target: w @ mu - target},
+        )
+
+#Optimize portfolio variance
+        res = minimize(var_obj, w0, method="SLSQP", bounds=bounds, constraints=cons)
+
+        if res.success:
+            vol.append(np.sqrt(res.fun))
+            ret.append(target)
+
+    return np.array(vol), np.array(ret)
+
+#Compute Efficient Frontier with and without commodities
+vol_base_m, ret_base_m = compute_frontier_no_short(returns_jensen_base, n_points=30)
+vol_with_m, ret_with_m = compute_frontier_no_short(returns_jensen_with, n_points=30)
+
+#Annualize the std. and return
+vol_base_ann = vol_base_m * np.sqrt(12)
+ret_base_ann = ret_base_m * 12
+vol_with_ann = vol_with_m * np.sqrt(12)
+ret_with_ann = ret_with_m * 12
+
+#Plot the Efficient Frontier
+import matplotlib.pyplot as plt
+
+fig, ax = plt.subplots(figsize=(8, 6))
+
+ax.plot(vol_base_ann * 100, ret_base_ann * 100, marker="o", linestyle="-",
+        label="Frontier: Stocks, Corp Bonds, REITs, T-bills")
+ax.plot(vol_with_ann * 100, ret_with_ann * 100, marker="o", linestyle="-",
+        label="Frontier: + Commodity Futures")
+
+ax.set_xlabel("Standard Deviation (%)")
+ax.set_ylabel("Expected Return (%)")
+ax.set_title("Efficient Frontiers (No Short Selling, Annualized)")
+ax.legend()
+ax.grid(True)
+
+fig.savefig("efficient_frontier_comparison.png", dpi=300, bbox_inches="tight")
+plt.show()
+
+
+
+####Monetary Policy Introduction
+import numpy as np
+import pandas as pd
+
+# Load monthly policy rate 
+fed = pd.read_excel(file_path, sheet_name="FEDL01 Index")[["Dates", "PX_LAST"]].copy()
+fed["Dates"] = pd.to_datetime(fed["Dates"])
+fed = fed.set_index("Dates").sort_index()
+fed = fed.loc["1989-09-01":"2025-09-30"].dropna()
+
+# Find Monthly changes
+fed["d_rate"] = fed["PX_LAST"].diff()
+
+# Sign of non-zero changes: +1 hikes, -1 cuts, NaN = no change
+sign_nonzero = np.sign(fed["d_rate"]).replace(0, np.nan)
+
+# Based on most recent previous change (carry forward last non-zero sign)
+last_sign = sign_nonzero.ffill()
+
+# restrictive = 1 if last_sign is +1 (hike regime), else 0 if -1 (cut regime)
+fed["restrictive"] = (last_sign == 1).astype(int)
+
+# marking action months (rate changed this month)
+fed["action_month"] = fed["d_rate"].ne(0).astype(int)
+
+fed[["PX_LAST", "d_rate", "action_month", "restrictive"]].head(15)
+
+
+#Puting both on the aligned index
+returns_m = returns_core.copy()
+returns_m.index = returns_m.index.to_period("M")
+
+fed_m = fed.copy()
+fed_m.index = fed_m.index.to_period("M")
+
+#Merge periods into returns
+returns_regime_m = returns_m.merge(
+    fed_m[["restrictive", "action_month"]],
+    left_index=True,
+    right_index=True,
+    how="inner"
+)
+
+#Check with merged data
+print("returns_core months:", len(returns_m))
+print("fed months:", len(fed_m))
+print("merged months:", len(returns_regime_m))
+
+print("\nRegime counts (over merged months):")
+print(returns_regime_m["restrictive"].value_counts())
+
+print("\nAction-month counts (over merged months):")
+print(returns_regime_m["action_month"].value_counts())
+
+print("\nCrosstab action_month x restrictive (over merged months):")
+print(pd.crosstab(returns_regime_m["restrictive"], returns_regime_m["action_month"]))
+
+
+#Split the merged dataset to two periods
+returns_exp = returns_regime_m[returns_regime_m["restrictive"] == 0].drop(columns=["restrictive", "action_month"])
+returns_res = returns_regime_m[returns_regime_m["restrictive"] == 1].drop(columns=["restrictive", "action_month"])
+
+
+#Define Table-II of Jensen paper with stats
+mean_exp = returns_exp.mean()
+std_exp  = returns_exp.std(ddof=1)
+
+mean_res = returns_res.mean()
+std_res  = returns_res.std(ddof=1)
+
+
+stats_exp = pd.DataFrame({
+    "Mean": mean_exp,
+    "Std": std_exp,
+    "CoV": std_exp / mean_exp,
+    "Sharpe": mean_exp / std_exp
+})
+
+stats_res = pd.DataFrame({
+    "Mean": mean_res,
+    "Std": std_res,
+    "CoV": std_res / mean_res,
+    "Sharpe": mean_res / std_res
+})
+
+stats_exp_pct = stats_exp.copy()
+stats_res_pct = stats_res.copy()
+stats_exp_pct[["Mean", "Std"]] *= 100
+stats_res_pct[["Mean", "Std"]] *= 100
+
+stats_exp_pct, stats_res_pct
+
+corr_exp = returns_exp.corr()
+corr_res = returns_res.corr()
+
+corr_exp, corr_res
+
+
+corr_exp_round = corr_exp.round(3)
+corr_res_round = corr_res.round(3)
+
+corr_exp_round, corr_res_round
+
+#Produce Table 3 for statistical significance with t-test & f-test
+from scipy import stats
+import numpy as np
+import pandas as pd
+
+#Define function to conduct T & F test
+def jensen_table_III(returns_exp, returns_res):
+    rows = []
+
+    for asset in returns_exp.columns:
+        x = returns_exp[asset].dropna()
+        y = returns_res[asset].dropna()
+
+        # Means
+        mean_exp = x.mean()
+        mean_res = y.mean()
+        diff = mean_res - mean_exp
+
+        # Welch t-test (unequal variances)
+        t_stat, p_t = stats.ttest_ind(y, x, equal_var=False)
+
+        # Variance ratio F-test
+        var_exp = x.var(ddof=1)
+        var_res = y.var(ddof=1)
+        f_stat = var_res / var_exp
+
+        # Two-sided p-value for F-test
+        df1, df2 = len(y) - 1, len(x) - 1
+        p_f = 2 * min(
+            stats.f.cdf(f_stat, df1, df2),
+            1 - stats.f.cdf(f_stat, df1, df2)
+        )
+
+        rows.append([
+            mean_exp * 100,
+            mean_res * 100,
+            diff * 100,
+            t_stat,
+            f_stat,
+            p_t,
+            p_f
+        ])
+
+    table = pd.DataFrame(
+        rows,
+        index=returns_exp.columns,
+        columns=[
+            "Mean Exp (%)",
+            "Mean Res (%)",
+            "Diff (Res−Exp) (%)",
+            "t-stat",
+            "F-stat (Var Res / Exp)",
+            "p-value (t)",
+            "p-value (F)"
+        ]
+    )
+
+    return table.round(3)
+
+#Define asset class & reformat
+assets = ["SPGCCITR", "SPXT", "RF", "LUACTRUU", "FNER"]
+
+table_III = jensen_table_III(
+    returns_exp[assets],
+    returns_res[assets]
+)
+
+table_III
+
+
+assets = ["SPGCCITR", "SPXT", "RF", "LUACTRUU", "FNER"]
+R_full = returns_core[assets]
+
+from scipy.optimize import minimize
+import numpy as np
+import pandas as pd
+
+def max_return_given_vol(R, target_vol, w0=None):
+    mu = R.mean().values
+    Sigma = R.cov().values
+    n = len(mu)
+
+    if w0 is None:
+        w0 = np.ones(n) / n
+
+    bounds = [(0, 1)] * n
+
+    def objective(w):
+        return -(w @ mu)
+
+    constraints = (
+        {"type": "eq", "fun": lambda w: np.sum(w) - 1},
+        {"type": "ineq", "fun": lambda w, tv=target_vol:
+            tv**2 - w.T @ Sigma @ w}
+    )
+
+    res = minimize(
+        objective,
+        w0,
+        method="SLSQP",
+        bounds=bounds,
+        constraints=constraints
+    )
+
+    return res
+
+def build_table_IV(R):
+    target_vols = [0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0]  # monthly %
+    rows = []
+    w_prev = np.ones(R.shape[1]) / R.shape[1]
+
+    for vol in target_vols:
+        res = max_return_given_vol(R, target_vol=vol / 100, w0=w_prev)
+
+        if res.success:
+            w_prev = res.x
+            rows.append(100 * res.x)
+        else:
+            rows.append([np.nan] * R.shape[1])
+
+    table = pd.DataFrame(
+        rows,
+        index=target_vols,
+        columns=R.columns
+    )
+
+    table.index.name = "Portfolio Std Dev (%)"
+    return table.round(2)
+
+table_IV = build_table_IV(R_full)
+table_IV
+
+
+#define solver to generate the table V
+def solve_multistart(R, target_vol, n_starts=50, seed=1):
+    rng = np.random.default_rng(seed)
+    best = None
+
+#Define random feasible starting portfolio
+    for _ in range(n_starts):
+        w0 = rng.random(R.shape[1])
+        w0 = w0 / w0.sum()
+        res = max_return_given_vol(R, target_vol=target_vol, w0=w0)
+        if res.success:
+            if (best is None) or (-(res.fun) > -(best.fun)):
+                best = res
+    return best
+
+assets = ["SPGCCITR","SPXT","RF","LUACTRUU","FNER"]
+R_full = returns_core[assets]
+
+#Define loop for target vol
+for v in [0.015, 0.02, 0.025]:  # 1.5%, 2.0%, 2.5% monthly
+    best = solve_multistart(R_full, target_vol=v, n_starts=80, seed=42)
+    w = pd.Series(best.x, index=assets).round(4)
+    print("\nTarget vol:", v, " best return:", (w @ R_full.mean()).round(6))
+    print(w)
+
+
+
+R_exp = returns_exp[assets].dropna()
+R_res = returns_res[assets].dropna()
+
+print("Expansive months:", len(R_exp))
+print("Restrictive months:", len(R_res))
+
+#Create the table V for optimal weights
+def build_table_fixed_vol(R, target_vols_pct=[0.5,1.0,1.5,2.0,2.5,3.0,3.5,4.0], n_starts=30, seed=42):
+    """
+    For each target volatility (monthly, in %), solve:
+      max w'mu  s.t.  sum(w)=1, 0<=w<=1,  sqrt(w'Sigma w) <= target_vol
+    Uses multistart to reduce corner/local-solution risk.
+    Returns weights in percent.
+    """
+    rng = np.random.default_rng(seed)
+    rows = []
+
+    for vol_pct in target_vols_pct:
+        tv = vol_pct / 100  # monthly decimal
+
+        best_res = None
+        for _ in range(n_starts):
+            w0 = rng.random(R.shape[1])
+            w0 = w0 / w0.sum()
+
+            res = max_return_given_vol(R, target_vol=tv, w0=w0)
+
+            if res.success:
+                # objective is negative return, so larger -(res.fun) is better
+                if (best_res is None) or (-(res.fun) > -(best_res.fun)):
+                    best_res = res
+
+        if best_res is None:
+            rows.append([np.nan] * R.shape[1])
+        else:
+            rows.append(100 * best_res.x)
+
+    out = pd.DataFrame(rows, index=target_vols_pct, columns=R.columns).round(2)
+    out.index.name = "Portfolio Std Dev (%)"
+    return out
+
+table_V_exp = build_table_fixed_vol(R_exp)
+table_V_res = build_table_fixed_vol(R_res)
+
+table_V_exp, table_V_res
+
+
+
+##Key stats for table V for explanation
+def portfolio_ret_vol(w, R):
+    mu = R.mean().values
+    Sigma = R.cov().values
+    pret = w @ mu
+    pvol = np.sqrt(w.T @ Sigma @ w)
+    return pret, pvol
+
+def add_portfolio_stats(table_w, R):
+    mu = R.mean().values
+    Sigma = R.cov().values
+
+    rets = []
+    vols = []
+    for vol_target, row in table_w.iterrows():
+        w = row.values / 100
+        pret = w @ mu
+        pvol = np.sqrt(w.T @ Sigma @ w)
+        rets.append(pret * 12 * 100)      # annual %
+        vols.append(pvol * np.sqrt(12) * 100)  # annual %
+
+    out = table_w.copy()
+    out["Ann. Return (%)"] = np.round(rets, 2)
+    out["Ann. Vol (%)"] = np.round(vols, 2)
+    return out
+
+table_V_exp_stats = add_portfolio_stats(table_V_exp, R_exp)
+table_V_res_stats = add_portfolio_stats(table_V_res, R_res)
+
+table_V_exp_stats, table_V_res_stats
+
+
+##Create efficient frontiers for the two periods
+
+assets = ["SPXT", "LUACTRUU", "FNER", "RF", "SPGCCITR"]
+
+R_exp = returns_exp[assets].dropna()
+R_res = returns_res[assets].dropna()
+
+print("Expansive months:", len(R_exp), "| from", R_exp.index.min(), "to", R_exp.index.max())
+print("Restrictive months:", len(R_res), "| from", R_res.index.min(), "to", R_res.index.max())
+
+R_exp.head(), R_res.head()
+
+
+
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from scipy.optimize import minimize
+
+#Create function optimizer to generate efficient frontier
+def efficient_frontier_long_only(R: pd.DataFrame, n_points: int = 40):
+    """
+    Compute (vol, ret) points by minimizing variance for a grid of target returns,
+    subject to: sum(w)=1 and 0<=w<=1 (long-only).
+    Returns monthly volatility and monthly expected return arrays.
+    """
+    R = R.dropna()
+    mu = R.mean().values
+    Sigma = R.cov().values
+    n = len(mu)
+
+    w0 = np.ones(n) / n
+    bounds = [(0, 1)] * n
+
+    def portfolio_variance(w):
+        return float(w.T @ Sigma @ w)
+
+    target_returns = np.linspace(mu.min(), mu.max(), n_points)
+
+    vols, rets = [], []
+    for target in target_returns:
+        constraints = (
+            {"type": "eq", "fun": lambda w: np.sum(w) - 1},
+            {"type": "eq", "fun": lambda w, target=target: w @ mu - target},
+        )
+
+        res = minimize(
+            portfolio_variance,
+            w0,
+            method="SLSQP",
+            bounds=bounds,
+            constraints=constraints,
+        )
+
+        if res.success:
+            vols.append(np.sqrt(res.fun))
+            rets.append(target)
+
+    return np.array(vols), np.array(rets)
+
+#Define function to keep only efficient points
+def keep_efficient_points(vol: np.ndarray, ret: np.ndarray):
+    """
+    Given arrays of volatility and return (same length),
+    sort by vol and keep only points that strictly increase in return.
+    """
+    df = pd.DataFrame({"vol": vol, "ret": ret}).dropna().sort_values("vol")
+
+    efficient = []
+    max_ret = -np.inf
+    for _, row in df.iterrows():
+        if row["ret"] > max_ret:
+            efficient.append(row)
+            max_ret = row["ret"]
+
+    eff = pd.DataFrame(efficient)
+    return eff["vol"].to_numpy(), eff["ret"].to_numpy()
+
+
+# Define Annualize helper function
+
+def annualize_frontier(vol_m: np.ndarray, ret_m: np.ndarray):
+    """
+    Convert monthly (vol, ret) to annualized (vol, ret).
+    """
+    vol_a = vol_m * np.sqrt(12)
+    ret_a = ret_m * 12
+    return vol_a, ret_a
+
+
+# Compute + clean frontier for periods
+
+def compute_regime_frontier(R_regime: pd.DataFrame, n_points: int = 40):
+    """
+    Compute and clean efficient frontier for one regime.
+    Returns annualized (vol, ret).
+    """
+    vol_m, ret_m = efficient_frontier_long_only(R_regime, n_points=n_points)
+    vol_m, ret_m = keep_efficient_points(vol_m, ret_m)
+    vol_a, ret_a = annualize_frontier(vol_m, ret_m)
+    return vol_a, ret_a
+
+
+#Generate efficient frontier with plots
+def plot_two_regime_frontiers(vol_exp_a, ret_exp_a, vol_res_a, ret_res_a, save_path=None):
+    fig, ax = plt.subplots(figsize=(8, 6))
+
+    ax.plot(
+        vol_exp_a * 100, ret_exp_a * 100,
+        marker="o", linestyle="-",
+        label="Expansive Monetary Regime"
+    )
+
+    ax.plot(
+        vol_res_a * 100, ret_res_a * 100,
+        marker="s", linestyle="--",
+        label="Restrictive Monetary Regime"
+    )
+
+    ax.set_xlabel("Annualized Volatility (%)")
+    ax.set_ylabel("Annualized Expected Return (%)")
+    ax.set_title("Efficient Frontiers by Monetary Policy Regime\n(Long-Only, With Commodities)")
+    ax.grid(True)
+    ax.legend()
+
+    plt.tight_layout()
+
+    if save_path is not None:
+        fig.savefig(save_path, dpi=300, bbox_inches="tight")
+
+    plt.show()
+    return fig, ax
+
+
+vol_exp_ann, ret_exp_ann = compute_regime_frontier(R_exp, n_points=40)
+vol_res_ann, ret_res_ann = compute_regime_frontier(R_res, n_points=40)
+
+
+plot_two_regime_frontiers(
+    vol_exp_ann, ret_exp_ann,
+    vol_res_ann, ret_res_ann,
+    save_path=r"C:\Users\olich\OneDrive\Desktop\Master Thesis\Result\efficient_frontiers_by_regime.png"
+)
+
+
+####Jensen Replication ends here######
+
+
+####Extension: Pre & Post-Finanzialization Comparision######
+
+#Split sample at 01/2004
+assets = ["SPXT", "LUACTRUU", "FNER", "RF", "SPGCCITR"]
+
+#Breakpoint for post-finanzialization
+
+R_pre  = returns_core.loc["1989-09-01":"2003-12-31", assets].dropna()
+R_post = returns_core.loc["2004-01-01":"2025-09-30", assets].dropna()
+
+print("PRE  : ", R_pre.index.min(),  "to", R_pre.index.max(),  "| months =", len(R_pre))
+print("POST : ", R_post.index.min(), "to", R_post.index.max(), "| months =", len(R_post))
+
+display(R_pre.head(), R_post.head())
+
+
+##Check & Compare correlation for commodities pre & post finanzialization with other asset classes
+summary_comm = pd.DataFrame({
+    "Mean (monthly)": [
+        R_pre["SPGCCITR"].mean(),
+        R_post["SPGCCITR"].mean()
+    ],
+    "Std (monthly)": [
+        R_pre["SPGCCITR"].std(ddof=1),
+        R_post["SPGCCITR"].std(ddof=1)
+    ],
+    "Sharpe (monthly)": [
+        R_pre["SPGCCITR"].mean() / R_pre["SPGCCITR"].std(ddof=1),
+        R_post["SPGCCITR"].mean() / R_post["SPGCCITR"].std(ddof=1)
+    ]
+}, index=["Pre-financialization", "Post-financialization"])
+
+summary_comm
+
+
+##Build correlation table of asset classes pre & post finanzialization
+corr_pre = R_pre.corr()
+corr_post = R_post.corr()
+
+# focus on key pairs
+corr_compare = pd.DataFrame({
+    "Pre-financialization": [
+        corr_pre.loc["SPGCCITR", "SPXT"],
+        corr_pre.loc["SPGCCITR", "LUACTRUU"],
+        corr_pre.loc["SPGCCITR", "RF"],
+        corr_pre.loc["SPGCCITR", "FNER"],
+    ],
+    "Post-financialization": [
+        corr_post.loc["SPGCCITR", "SPXT"],
+        corr_post.loc["SPGCCITR", "LUACTRUU"],
+        corr_post.loc["SPGCCITR", "RF"],
+        corr_post.loc["SPGCCITR", "FNER"],
+    ]
+}, index=["Stocks", "Corp Bonds", "T-Bills", "REITs"])
+
+corr_compare
+
+corr_compare_round = corr_compare.round(3)
+corr_compare_round
+
+# Producing Pre-finanzialization for Table 2 
+table2_pre = pd.DataFrame({
+    "Mean monthly (%)": R_pre.mean() * 100,
+    "Std monthly (%)": R_pre.std(ddof=1) * 100,
+})
+
+table2_pre["Coeff. of Variation"] = (
+    table2_pre["Std monthly (%)"] / table2_pre["Mean monthly (%)"]
+)
+
+table2_pre
+
+
+# Producing Post-finanzialization for Table 2 
+table2_post = pd.DataFrame({
+    "Mean monthly (%)": R_post.mean() * 100,
+    "Std monthly (%)": R_post.std(ddof=1) * 100,
+})
+
+# Producing Post-finanzialization for Table 2 
+table2_post["Coeff. of Variation"] = (
+    table2_post["Std monthly (%)"] / table2_post["Mean monthly (%)"]
+)
+
+table2_post
+
+
+####Producing Table 3 from Jensen
+
+import numpy as np
+from scipy import stats
+
+comm_pre  = R_pre["SPGCCITR"].dropna()
+comm_post = R_post["SPGCCITR"].dropna()
+
+len(comm_pre), len(comm_post)
+
+
+#Comparison of pre-post Finanzialization statistically only
+
+#T-test for Mean Difference
+t_stat, p_val_t = stats.ttest_ind(
+    comm_pre,
+    comm_post,
+    equal_var=False
+)
+
+
+var_pre  = np.var(comm_pre, ddof=1)
+var_post = np.var(comm_post, ddof=1)
+
+#F-test for Variance
+F_stat = var_post / var_pre
+
+df1 = len(comm_post) - 1
+df2 = len(comm_pre) - 1
+
+# two-sided p-value
+p_val_f = 2 * min(
+    stats.f.cdf(F_stat, df1, df2),
+    1 - stats.f.cdf(F_stat, df1, df2)
+)
+
+F_stat, p_val_f
+t_stat, p_val_t
+
+##Produce Table 3 like comparison table for Pre-Post Finanzialization
+table3_comm = pd.DataFrame({
+    "Difference in Mean Monthly Returns (%)": [
+        (comm_post.mean() - comm_pre.mean()) * 100
+    ],
+    "t-statistic": [t_stat],
+    "p-value (t-test)": [p_val_t],
+    "F-statistic (Var Post / Var Pre)": [F_stat],
+    "p-value (F-test)": [p_val_f],
+}, index=["SPGCCITR"])
+
+table3_comm
+
+
+#Producing Table 3 for all assets
+import numpy as np
+import pandas as pd
+from scipy import stats
+
+assets = ["SPGCCITR", "SPXT", "RF", "LUACTRUU", "FNER"]
+
+#Function to calculate Table 3 for statistical significance
+def table3_pre_post(R_pre: pd.DataFrame, R_post: pd.DataFrame, assets):
+    rows = []
+
+    for a in assets:
+        x_pre = R_pre[a].dropna().values
+        x_post = R_post[a].dropna().values
+
+        # t-test for mean difference (Post - Pre)
+        t_stat, p_t = stats.ttest_ind(x_post, x_pre, equal_var=False)
+
+        # F-test for variance ratio (Var Post / Var Pre)
+        var_pre = np.var(x_pre, ddof=1)
+        var_post = np.var(x_post, ddof=1)
+
+        F = var_post / var_pre
+        df1 = len(x_post) - 1
+        df2 = len(x_pre) - 1
+
+        # two-sided p-value for F-test
+        p_f = 2 * min(stats.f.cdf(F, df1, df2), 1 - stats.f.cdf(F, df1, df2))
+
+        rows.append({
+            "Asset": a,
+            "Diff Mean (Post-Pre, %)": (np.mean(x_post) - np.mean(x_pre)) * 100,
+            "t-stat": t_stat,
+            "p_t": p_t,
+            "F-stat (Var Post/Pre)": F,
+            "p_f": p_f,
+            "n_pre": len(x_pre),
+            "n_post": len(x_post)
+        })
+
+    out = pd.DataFrame(rows).set_index("Asset")
+    return out
+
+table3_all = table3_pre_post(R_pre, R_post, assets)
+
+# Round & Clean Table 3
+table3_all_round = table3_all.copy()
+table3_all_round[["Diff Mean (Post-Pre, %)", "t-stat", "p_t", "F-stat (Var Post/Pre)", "p_f"]] = \
+    table3_all_round[["Diff Mean (Post-Pre, %)", "t-stat", "p_t", "F-stat (Var Post/Pre)", "p_f"]].round(4)
+
+table3_all_round
+
+
+#Formatting Table 3 like the paper
+table3_jensen_style = table3_all_round.copy()
+table3_jensen_style["Difference in Mean Monthly Returns (%) (t-stat)"] = (
+    table3_jensen_style["Diff Mean (Post-Pre, %)"].round(4).astype(str)
+    + " (" + table3_jensen_style["t-stat"].round(2).astype(str) + ")"
+)
+
+table3_jensen_style["Difference in Std Dev of Monthly Returns (F-stat)"] = (
+    table3_jensen_style["F-stat (Var Post/Pre)"].round(4).astype(str)
+)
+
+table3_jensen_style[[
+    "Difference in Mean Monthly Returns (%) (t-stat)",
+    "Difference in Std Dev of Monthly Returns (F-stat)",
+    "p_t",
+    "p_f"
+]]
+
+
+##Producing Table 4 for all assets
+import numpy as np
+import pandas as pd
+from scipy.optimize import minimize
+
+# Set Monthly risk targets Std. (in decimals)
+target_vols = np.array([0.005, 0.010, 0.015, 0.020, 0.025, 0.030, 0.035, 0.040])
+
+#Define function to produce Table 4
+def table_iv_weights(R: pd.DataFrame, target_vols=target_vols):
+    """
+    Table IV: For each target monthly volatility, find portfolio weights that
+    maximize expected return subject to:
+      - sum(w)=1
+      - w >= 0 (long-only)
+      - portfolio variance <= target_vol^2
+    Returns weights in percent.
+    """
+    R = R.dropna()
+    mu = R.mean().values
+    Sigma = R.cov().values
+    n = len(mu)
+
+    w0 = np.ones(n) / n
+    bounds = [(0, 1)] * n
+
+    def neg_return(w):
+        return -(w @ mu)
+
+    out_rows = []
+
+    for tv in target_vols:
+        cons = (
+            {"type": "eq", "fun": lambda w: np.sum(w) - 1},
+            {"type": "ineq", "fun": lambda w, tv=tv: tv**2 - (w.T @ Sigma @ w)},
+        )
+
+        res = minimize(
+            neg_return,
+            w0,
+            method="SLSQP",
+            bounds=bounds,
+            constraints=cons
+        )
+
+        if not res.success:
+            raise RuntimeError(f"Optimization failed at target vol={tv}: {res.message}")
+
+        w = res.x
+        out_rows.append(w * 100)
+
+    W = pd.DataFrame(out_rows, columns=R.columns, index=(target_vols * 100).round(1))
+    W.index.name = "Portfolio Std Dev (%)"
+    return W
+
+#Table 4 for pre-finanzialization
+tableIV_pre = table_iv_weights(R_pre)
+tableIV_pre
+
+#Table 4 for post-finanzialization
+tableIV_post = table_iv_weights(R_post)
+tableIV_post
+
+#Compare only Commodities future pre-post finanzialization
+compare_spgccitr = pd.DataFrame({
+    "Pre-financialization (%)": tableIV_pre["SPGCCITR"],
+    "Post-financialization (%)": tableIV_post["SPGCCITR"]
+})
+
+compare_spgccitr
+
+###Produce Table 5 for Pre-Post Finanzialization for Monetary Periods
+
+#Split period into expansive and restrictive periods for pre and post finanzialization
+R_pre_m = R_pre.copy()
+R_pre_m.index = R_pre_m.index.to_period("M")
+
+R_post_m = R_post.copy()
+R_post_m.index = R_post_m.index.to_period("M")
+
+
+def split_by_regime(Rm, fed_m):
+    tmp = Rm.merge(fed_m[["restrictive", "action_month"]], left_index=True, right_index=True, how="inner")
+
+ 
+    exp = tmp[tmp["restrictive"] == 0].drop(columns=["restrictive", "action_month"])
+    res = tmp[tmp["restrictive"] == 1].drop(columns=["restrictive", "action_month"])
+    return exp, res
+
+exp_pre, res_pre   = split_by_regime(R_pre_m, fed_m)
+exp_post, res_post = split_by_regime(R_post_m, fed_m)
+
+#Check the data
+print("PRE  expansive months:", len(exp_pre), "| restrictive months:", len(res_pre))
+print("POST expansive months:", len(exp_post), "| restrictive months:", len(res_post))
+print("PRE  exp range:", exp_pre.index.min(), "to", exp_pre.index.max())
+print("PRE  res range:", res_pre.index.min(), "to", res_pre.index.max())
+print("POST exp range:", exp_post.index.min(), "to", exp_post.index.max())
+print("POST res range:", res_post.index.min(), "to", res_post.index.max())
+
+
+tableV_pre_exp = table_iv_weights(exp_pre)
+tableV_pre_exp
+
+
+tableV_pre_res = table_iv_weights(res_pre)
+tableV_pre_res
+
+
+# Add periods
+tableV_pre_exp_l = tableV_pre_exp.copy()
+tableV_pre_exp_l["Regime"] = "Expansive"
+
+tableV_pre_res_l = tableV_pre_res.copy()
+tableV_pre_res_l["Regime"] = "Restrictive"
+
+# Combine the two tables together
+tableV_pre = pd.concat([tableV_pre_exp_l, tableV_pre_res_l])
+
+# Reorder columns 
+tableV_pre = tableV_pre[["Regime", "SPGCCITR", "SPXT", "RF", "LUACTRUU", "FNER"]]
+
+# Sort by portfolio risk then regime
+tableV_pre = tableV_pre.sort_index(level=0)
+
+#Table 5 pre-finanzialization
+tableV_pre.round()
+
+
+#Produce Table 5 Post finanzialization
+#Expansive Period
+tableV_post_exp = table_iv_weights(exp_post)
+tableV_post_exp
+
+#Restrictive Period
+tableV_post_res = table_iv_weights(res_post)
+tableV_post_res
+
+#Define Periods for to combine both tables together
+tableV_post_exp_l = tableV_post_exp.copy()
+tableV_post_exp_l["Regime"] = "Expansive"
+
+tableV_post_res_l = tableV_post_res.copy()
+tableV_post_res_l["Regime"] = "Restrictive"
+
+
+# Combine the periods with 1 table
+tableV_post = pd.concat([tableV_post_exp_l, tableV_post_res_l])
+
+# Reorder columns to match before tables
+tableV_post = tableV_post[["Regime", "SPGCCITR", "SPXT", "RF", "LUACTRUU", "FNER"]]
+
+# Sort by portfolio risk & period
+tableV_post = tableV_post.sort_index(level=0)
+
+tableV_post.round(2)
+
+
+###Produce Efficient Frontier for both pre & post Finanzialization for both periods
+
+from scipy.optimize import minimize
+import numpy as np
+
+#Define function for efficient frontuer
+def efficient_frontier_long_only(R, n_points=40, eps=1e-10):
+    R = R.dropna()
+    mu = R.mean().values
+    Sigma = R.cov().values
+    n = len(mu)
+
+    w0 = np.ones(n) / n
+    bounds = [(0, 1)] * n
+
+    def portfolio_variance(w):
+        return w @ Sigma @ w
+
+    # target expected returns 
+    target_returns = np.linspace(mu.min(), mu.max(), n_points)
+
+    vols, rets = [], []
+
+    for target in target_returns:
+        constraints = (
+            {"type": "eq", "fun": lambda w: np.sum(w) - 1},
+            {"type": "eq", "fun": lambda w, t=target: w @ mu - t},
+        )
+
+        res = minimize(
+            portfolio_variance,
+            w0,
+            method="SLSQP",
+            bounds=bounds,
+            constraints=constraints
+        )
+
+        if res.success:
+            vols.append(np.sqrt(res.fun))
+            rets.append(target)
+
+    vol = np.asarray(vols)
+    ret = np.asarray(rets)
+
+    # ---- Clean: sort by vol
+    idx = np.argsort(vol)
+    vol = vol[idx]
+    ret = ret[idx]
+
+    # ---- Drop near-duplicate vol points (keep the best return among duplicates)
+    vol_u = []
+    ret_u = []
+    i = 0
+    while i < len(vol):
+        j = i
+        best_r = ret[i]
+        while j + 1 < len(vol) and abs(vol[j + 1] - vol[i]) <= eps:
+            j += 1
+            if ret[j] > best_r:
+                best_r = ret[j]
+        vol_u.append(vol[i])
+        ret_u.append(best_r)
+        i = j + 1
+
+    vol = np.array(vol_u)
+    ret = np.array(ret_u)
+
+    # ---- Upper envelope: keep only nondominated points (increasing return with vol)
+    keep = np.zeros_like(ret, dtype=bool)
+    best_so_far = -np.inf
+    for k in range(len(ret)):
+        if ret[k] > best_so_far + eps:
+            keep[k] = True
+            best_so_far = ret[k]
+
+    return vol[keep], ret[keep]
+
+
+# For pre-finanzialization
+vol_pre_exp, ret_pre_exp = efficient_frontier_long_only(exp_pre)
+vol_pre_res, ret_pre_res = efficient_frontier_long_only(res_pre)
+
+# For post-finanzialization
+vol_post_exp, ret_post_exp = efficient_frontier_long_only(exp_post)
+vol_post_res, ret_post_res = efficient_frontier_long_only(res_post)
+
+# Annualize
+def ann(vol, ret):
+    return vol * np.sqrt(12), ret * 12
+
+vol_pre_exp_a, ret_pre_exp_a = ann(vol_pre_exp, ret_pre_exp)
+vol_pre_res_a, ret_pre_res_a = ann(vol_pre_res, ret_pre_res)
+vol_post_exp_a, ret_post_exp_a = ann(vol_post_exp, ret_post_exp)
+vol_post_res_a, ret_post_res_a = ann(vol_post_res, ret_post_res)
+
+
+#Check Monotone
+print("PRE Exp monotone:", np.all(np.diff(vol_pre_exp_a) > 0), np.all(np.diff(ret_pre_exp_a) > 0))
+print("PRE Res monotone:", np.all(np.diff(vol_pre_res_a) > 0), np.all(np.diff(ret_pre_res_a) > 0))
+print("POST Exp monotone:", np.all(np.diff(vol_post_exp_a) > 0), np.all(np.diff(ret_post_exp_a) > 0))
+print("POST Res monotone:", np.all(np.diff(vol_post_res_a) > 0), np.all(np.diff(ret_post_res_a) > 0))
+
+
+#Plot Frontier for Pre-finanzialization
+import matplotlib.pyplot as plt
+
+plt.figure(figsize=(8,6))
+
+plt.plot(vol_pre_exp_a*100,  ret_pre_exp_a*100,  marker="o", linestyle="-",  label="PRE – Expansive")
+plt.plot(vol_pre_res_a*100,  ret_pre_res_a*100,  marker="s", linestyle="--", label="PRE – Restrictive")
+
+plt.xlabel("Annualized Volatility (%)")
+plt.ylabel("Annualized Expected Return (%)")
+plt.title("Efficient Frontier by Monetary Regime (Pre-financialization)")
+plt.grid(True)
+plt.legend()
+plt.tight_layout()
+
+plt.savefig(
+    r"C:\Users\olich\OneDrive\Desktop\Master Thesis\Result\efficient_frontier_pre_financialization.png",
+    dpi=300,
+    bbox_inches="tight"
+)
+plt.show()
+
+
+#Plot Frontier for Post-finanzialization
+plt.figure(figsize=(8,6))
+
+plt.plot(vol_post_exp_a*100, ret_post_exp_a*100, marker="o", linestyle="-",  label="POST – Expansive")
+plt.plot(vol_post_res_a*100, ret_post_res_a*100, marker="s", linestyle="--", label="POST – Restrictive")
+
+plt.xlabel("Annualized Volatility (%)")
+plt.ylabel("Annualized Expected Return (%)")
+plt.title("Efficient Frontier by Monetary Regime (Post-financialization)")
+plt.grid(True)
+plt.legend()
+plt.tight_layout()
+
+plt.savefig(
+    r"C:\Users\olich\OneDrive\Desktop\Master Thesis\Result\efficient_frontier_post_financialization.png",
+    dpi=300,
+    bbox_inches="tight"
+)
+plt.show()
+
+
+####Post-Finanzialization - Commodity Futures#######
+
+#Save the post-return data with functions
+import pandas as pd
+import numpy as np
+
+#Index LEVEL series and returns monthly simple returns.
+def read_level_returns(file_path, sheet_name, start="1989-09-01", end="2025-09-30"):
+    
+    df = pd.read_excel(file_path, sheet_name=sheet_name)[["Dates", "PX_LAST"]].copy()
+    df["Dates"] = pd.to_datetime(df["Dates"])
+    df = df.set_index("Dates").sort_index()
+    df = df.loc[start:end].dropna()
+    ret = df["PX_LAST"].pct_change().dropna()
+    ret.name = sheet_name
+    return ret
+
+
+#Annualized interest rate in percentage (Dates, PX_LAST) and converts it to monthly compounded returns
+def read_rate_to_monthly_return(file_path, sheet_name, start="1989-09-01", end="2025-09-30"):
+    df = pd.read_excel(file_path, sheet_name=sheet_name)[["Dates", "PX_LAST"]].copy()
+    df["Dates"] = pd.to_datetime(df["Dates"])
+    df = df.set_index("Dates").sort_index()
+    df = df.loc[start:end].dropna()
+    ret = (1 + df["PX_LAST"] / 100.0) ** (1/12) - 1
+    ret = ret.dropna()
+    ret.name = sheet_name
+    return ret
+
+# Combine the core assets from Jensen together and rename them
+spxt_ret = read_level_returns(file_path, "SPXT Index")
+spxt_ret.name = "SPXT"
+
+lu_ret = read_level_returns(file_path, "LUACTRUU Index")
+lu_ret.name = "LUACTRUU"
+
+fner_ret = read_level_returns(file_path, "FNER Index")
+fner_ret.name = "FNER"
+
+spgccitr_ret = read_level_returns(file_path, "SPGCCITR Index")
+spgccitr_ret.name = "SPGCCITR"
+
+# --- Risk-free rate ---
+rf_ret = read_rate_to_monthly_return(file_path, "FDTR Index")
+rf_ret.name = "RF"
+
+
+# Add Oil, TIPS & VIX into the core assets
+oil_ret = read_level_returns(file_path, "BCOMCLTR Index")
+oil_ret.name = "OIL"
+
+tips_ret = read_level_returns(file_path, "LBUTTRUU Index")
+tips_ret.name = "TIPS"
+
+vix_ret = read_level_returns(file_path, "SPVXSTR Index")
+vix_ret.name = "VIX"
+
+oil_ret.head(), oil_ret.tail()
+
+
+# Combine all monthly return series
+returns = pd.concat([
+    spxt_ret,
+    lu_ret,
+    fner_ret,
+    spgccitr_ret,
+    rf_ret,
+    oil_ret,
+    tips_ret,
+    vix_ret
+], axis=1)
+
+# Keep common sample only
+returns = returns.dropna()
+
+returns.head(), returns.tail()
+
+
+# Post-financialization sample (2004 onward)
+post_returns = returns.loc["2004-01-01":"2025-09-30"].copy()
+
+print("Post-financialization sample:")
+print(post_returns.index.min(), "to", post_returns.index.max())
+print("Number of months:", len(post_returns))
+
+post_returns.head()
+
+
+#### Monetary regime construction (same logic as before) 
+
+fed = pd.read_excel(file_path, sheet_name="FEDL01 Index")[["Dates", "PX_LAST"]].copy()
+fed["Dates"] = pd.to_datetime(fed["Dates"])
+fed = fed.set_index("Dates").sort_index()
+
+# Monthly changes
+fed["d_rate"] = fed["PX_LAST"].diff()
+
+# Sign of non-zero changes
+sign_nonzero = np.sign(fed["d_rate"]).replace(0, np.nan)
+
+# Carry forward last non-zero sign (ex-ante regime)
+fed["last_sign"] = sign_nonzero.ffill()
+
+# Restrictive regime = 1 if last move was a hike
+fed["restrictive"] = (fed["last_sign"] == 1).astype(int)
+
+# Convert to monthly PeriodIndex for merge
+fed_m = fed.copy()
+fed_m.index = fed_m.index.to_period("M")
+
+fed_m[["PX_LAST", "d_rate", "restrictive"]].head(15)
+
+
+# Convert post_returns index to monthly
+post_returns_m = post_returns.copy()
+post_returns_m.index = post_returns_m.index.to_period("M")
+
+# Merge restrictive regime indicator
+post_with_regime = post_returns_m.merge(
+    fed_m[["restrictive"]],
+    left_index=True,
+    right_index=True,
+    how="inner"
+)
+
+#Check the conversion & merge
+print("Merged sample range:")
+print(post_with_regime.index.min(), "to", post_with_regime.index.max())
+
+print("\nRegime counts:")
+print(post_with_regime["restrictive"].value_counts())
+
+
+# Split post-financialization sample by expansive & restrictive periods
+post_exp = post_with_regime[post_with_regime["restrictive"] == 0].drop(columns="restrictive")
+post_res = post_with_regime[post_with_regime["restrictive"] == 1].drop(columns="restrictive")
+
+print("Expansive months:", len(post_exp))
+print("Restrictive months:", len(post_res))
+
+post_exp.head(), post_res.head()
+
+
+# Mean monthly returns by periods
+mean_exp = post_exp.mean() * 100
+mean_res = post_res.mean() * 100
+
+mean_table = pd.DataFrame({
+    "Expansive (%)": mean_exp.round(3),
+    "Restrictive (%)": mean_res.round(3),
+    "Diff (Res - Exp) (%)": (mean_res - mean_exp).round(3)
+})
+
+mean_table
+
+
+#Construct static portfolio to check the use of commodities in downside protection
+import numpy as np
+import pandas as pd
+
+#Define function for Sortino Ratio
+def sortino_ratio(returns, mar=0.0):
+    """
+    Sortino ratio with minimum acceptable return (MAR).
+    """
+    downside = returns[returns < mar]
+    downside_std = np.sqrt((downside ** 2).mean())
+    if downside_std == 0:
+        return np.nan
+    return (returns.mean() - mar) / downside_std
+
+#Define function for Maximum Drawdown
+def max_drawdown(returns):
+    """
+    Maximum drawdown from cumulative returns.
+    """
+    cum = (1 + returns).cumprod()
+    peak = cum.cummax()
+    drawdown = (cum - peak) / peak
+    return drawdown.min()
+
+#Define function for expected shortfall
+def expected_shortfall(returns, alpha=0.05):
+    """
+    Historical Expected Shortfall (CVaR).
+    """
+    var = np.quantile(returns, alpha)
+    return returns[returns <= var].mean()
+
+
+assets = ["SPGCCITR", "OIL", "TIPS", "VIX", "SPXT", "LUACTRUU", "FNER", "RF"]
+
+#Combine all the risk metrics together
+def risk_dashboard(R, alpha=0.05, mar=0.0):
+    out = pd.DataFrame(index=assets)
+    out["Mean (%)"] = (R[assets].mean() * 100)
+    out["Vol (%)"] = (R[assets].std(ddof=1) * 100)
+    out["Sortino"] = R[assets].apply(lambda s: sortino_ratio(s, mar=mar))
+    out["Max Drawdown (%)"] = (R[assets].apply(max_drawdown) * 100)
+    out[f"ES({int(alpha*100)}%) (%)"] = (R[assets].apply(lambda s: expected_shortfall(s, alpha=alpha)) * 100)
+    return out.round(3)
+
+dashboard_exp = risk_dashboard(post_exp, alpha=0.05, mar=0.0)
+dashboard_res = risk_dashboard(post_res, alpha=0.05, mar=0.0)
+
+
+print("Expansive regime risk dashboard (post-financialization):")
+display(dashboard_exp)
+
+print("\nRestrictive regime risk dashboard (post-financialization):")
+display(dashboard_res)
+
+# Construct two portfolios with and without commodities
+base_assets = ["SPXT", "LUACTRUU", "FNER", "RF"]
+with_comm   = ["SPXT", "LUACTRUU", "FNER", "RF", "SPGCCITR"]
+
+def gmv_portfolio(R):
+    Sigma = R.cov().values
+    invS = np.linalg.inv(Sigma)
+    ones = np.ones(len(invS))
+    w = invS @ ones / (ones @ invS @ ones)
+    return pd.Series(w, index=R.columns)
+
+# Build portfolios (post-financialization)
+w_base = gmv_portfolio(post_with_regime[base_assets])
+w_comm = gmv_portfolio(post_with_regime[with_comm])
+
+w_base.round(3), w_comm.round(3)
+
+
+
+#Define function for Expected Vol @ 5%
+from scipy.optimize import minimize
+
+def target_vol_portfolio(R, target_vol_ann=0.05):
+    """
+    Maximize mean return subject to:
+      - sum(w)=1
+      - w >= 0
+      - portfolio volatility <= target_vol_ann
+    """
+    mu = R.mean().values
+    Sigma = R.cov().values
+    n = len(mu)
+
+    w0 = np.ones(n) / n
+    bounds = [(0, 1)] * n
+    target_vol_m = target_vol_ann / np.sqrt(12)
+
+    def neg_return(w):
+        return -(w @ mu)
+
+    cons = (
+        {"type": "eq", "fun": lambda w: np.sum(w) - 1},
+        {"type": "ineq", "fun": lambda w:
+            target_vol_m**2 - (w.T @ Sigma @ w)}
+    )
+
+    res = minimize(
+        neg_return,
+        w0,
+        method="SLSQP",
+        bounds=bounds,
+        constraints=cons
+    )
+
+    if not res.success:
+        raise RuntimeError(res.message)
+
+    return pd.Series(res.x, index=R.columns)
+
+# Build portfolios
+w_base_tv = target_vol_portfolio(post_with_regime[base_assets])
+w_comm_tv = target_vol_portfolio(post_with_regime[with_comm])
+
+w_base_tv.round(3), w_comm_tv.round(3)
+
+
+# Compute portfolio returns
+port_base_ret = post_with_regime[base_assets] @ w_base_tv
+port_comm_ret = post_with_regime[with_comm] @ w_comm_tv
+
+port_base_ret.name = "Base Portfolio"
+port_comm_ret.name = "With Commodities"
+
+port_base_ret.head(), port_comm_ret.head()
+
+
+
+# Portfolio-level downside risk comparison between with & without commodities
+portfolio_risk = pd.DataFrame({
+    "Base Portfolio": [
+        port_base_ret.mean() * 100,
+        port_base_ret.std(ddof=1) * 100,
+        sortino_ratio(port_base_ret),
+        max_drawdown(port_base_ret) * 100,
+        expected_shortfall(port_base_ret, alpha=0.05) * 100
+    ],
+    "With Commodities": [
+        port_comm_ret.mean() * 100,
+        port_comm_ret.std(ddof=1) * 100,
+        sortino_ratio(port_comm_ret),
+        max_drawdown(port_comm_ret) * 100,
+        expected_shortfall(port_comm_ret, alpha=0.05) * 100
+    ]
+},
+index=[
+    "Mean (%)",
+    "Vol (%)",
+    "Sortino Ratio",
+    "Max Drawdown (%)",
+    "ES(5%) (%)"
+]).round(3)
+
+portfolio_risk
